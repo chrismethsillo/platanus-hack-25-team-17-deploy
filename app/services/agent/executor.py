@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.agent.processor import process_user_command
+from app.models.text_agent import AgentActionSchema
 
 logger = logging.getLogger(__name__)
 
