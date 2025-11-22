@@ -7,6 +7,7 @@ class ActionType(StrEnum):
 
     CREATE_SESSION = "create_session"
     CLOSE_SESSION = "close_session"
+    JOIN_SESSION = "join_session"
     ASSIGN_ITEM_TO_USER = "assign_item_to_user"
     UNKNOWN = "unknown"
 
@@ -22,6 +23,12 @@ class CloseSessionData(BaseModel):
 
     session_id: int | None = None
     session_description: str | None = None
+
+
+class JoinSessionData(BaseModel):
+    """Schema for join session action data."""
+
+    session_id: str = Field(..., description="UUID of the session to join")
 
 
 class AssignItemToUserData(BaseModel):
@@ -47,5 +54,6 @@ class AgentActionSchema(BaseModel):
     action: ActionType
     create_session_data: CreateSessionData | None = None
     close_session_data: CloseSessionData | None = None
+    join_session_data: JoinSessionData | None = None
     assign_item_to_user_data: AssignItemToUserData | None = None
     unknown_data: UnknownActionData | None = None

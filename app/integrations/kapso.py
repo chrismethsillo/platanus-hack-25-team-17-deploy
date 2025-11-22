@@ -28,12 +28,34 @@ def send_kapso_request(endpoint: str, body: KapsoBody, method: str = "POST") -> 
 
 
 def send_text_message(receiver: str, message: str) -> None:
+    """Send a text message to a single receiver.
+
+    Args:
+        receiver: Phone number of the receiver
+        message: Text message to send
+    """
     body = KapsoTextMessage(
         to=receiver,
         type=KapsoMessageType.TEXT,
         text=KapsoBody(body=message),
     )
     send_kapso_request("messages", body)
+
+
+def send_text_message_to_multiple(receivers: list[str], message: str) -> None:
+    """Send a text message to multiple receivers.
+
+    Args:
+        receivers: List of phone numbers
+        message: Text message to send to all receivers
+    """
+    for receiver in receivers:
+        try:
+            send_text_message(receiver, message)
+        except Exception as e:
+            # Log error but continue sending to other users
+            import logging
+            logging.error(f"Failed to send message to {receiver}: {e}")
 
 
 def send_buttons_message(receiver: str, title: str, buttons: list[KapsoButton]) -> None:

@@ -26,7 +26,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    phone_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    phone_number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
 
     # Relationships
     invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="payer", foreign_keys="Invoice.payer_id")

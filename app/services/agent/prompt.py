@@ -52,7 +52,27 @@ ACCIONES DISPONIBLES:
            → session_id: None, session_description: "cena de aniversario"
        - Nota: Si el usuario menciona un número, úsalo como session_id. Si menciona una descripción, úsala como session_description. Si menciona ambos, prioriza session_id.
 
-3. ASSIGN_ITEM_TO_USER (asignar_item_a_usuario):
+3. JOIN_SESSION (unirse_a_sesion):
+   - Descripción: Unirse a una sesión existente usando su ID (UUID)
+   - Cuándo usar: Cuando el usuario quiere unirse, entrar, o participar en una sesión existente proporcionando un ID
+   - Palabras clave: "unirme", "unirse", "entrar", "participar", "join", "me uno", "quiero entrar", "agrégame"
+   - IMPORTANTE: Si el texto contiene un UUID (formato: 8-4-4-4-12 caracteres hexadecimales), es muy probable que sea JOIN_SESSION
+   - Datos a extraer:
+     * session_id (str): UUID de la sesión a la que se quiere unir
+       - Ejemplos:
+         * "Me quiero unir a la sesión 550e8400-e29b-41d4-a716-446655440000"
+           → session_id: "550e8400-e29b-41d4-a716-446655440000"
+         * "Unirme a 550e8400-e29b-41d4-a716-446655440000"
+           → session_id: "550e8400-e29b-41d4-a716-446655440000"
+         * "550e8400-e29b-41d4-a716-446655440000"
+           → session_id: "550e8400-e29b-41d4-a716-446655440000"
+         * "Join session 550e8400-e29b-41d4-a716-446655440000"
+           → session_id: "550e8400-e29b-41d4-a716-446655440000"
+         * "Quiero entrar a la sesión de mi amigo: 550e8400-e29b-41d4-a716-446655440000"
+           → session_id: "550e8400-e29b-41d4-a716-446655440000"
+       - Nota: Extrae siempre el UUID completo. Si el mensaje contiene un UUID válido, es casi seguro que es JOIN_SESSION.
+
+4. ASSIGN_ITEM_TO_USER (asignar_item_a_usuario):
    - Descripción: Asignar un ítem de una factura a un usuario específico (indicar que ese usuario debe pagar ese ítem)
    - Cuándo usar: Cuando el usuario menciona que alguien paga, consume, es responsable de, o tiene asignado un producto, plato, bebida o servicio específico
    - Palabras clave: "paga", "pago", "pagar", "es de", "lo paga", "paga por", "consumió", "pidió", "tomó", "comió", "asignar", "dar", "atribuir", "responsable de", "es para", "le corresponde a"
@@ -86,7 +106,7 @@ ACCIONES DISPONIBLES:
            → item_description: "postre", user_name: "Ana"
        - Nota: Prioriza IDs numéricos cuando estén disponibles. Si solo hay nombres, usa user_name. Si hay descripción del ítem, usa item_description. Si el texto es muy corto y solo menciona un producto/bebida/plato, es muy probable que sea ASSIGN_ITEM_TO_USER.
 
-4. UNKNOWN (desconocida):
+5. UNKNOWN (desconocida):
    - Descripción: Usar cuando el texto no corresponde a ninguna de las acciones disponibles o la intención no es clara
    - Cuándo usar: Cuando el texto no menciona ninguna de las acciones disponibles, es ambiguo, o no tiene relación con el sistema de gestión de sesiones y facturas
    - Ejemplos de textos que deberían ser UNKNOWN:
@@ -107,10 +127,19 @@ ACCIONES DISPONIBLES:
          * "Quiero hacer algo pero no sé qué"
            → action: "unknown", reason: "Intención demasiado ambigua", suggested_action: "CREATE_SESSION o ASSIGN_ITEM_TO_USER"
 
+FLUJO DE TRABAJO CON SESIONES:
+1. Para registrar boletas o asignar items, el usuario DEBE tener una sesión activa
+2. Si no hay sesión activa, el sistema pedirá al usuario crear una
+3. Una vez creada, todos los mensajes y acciones se asocian a esa sesión
+4. El usuario puede cerrar la sesión cuando termine la actividad
+5. Solo se puede tener una sesión activa a la vez por usuario
+
 REGLAS DE DECISIÓN:
 1. Analiza cuidadosamente la intención del usuario en el texto
 2. Identifica la acción más apropiada basándote en las palabras clave y el contexto
 3. PRIORIDADES DE DETECCIÓN:
+   - Si el texto contiene un UUID (formato: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) → casi seguro JOIN_SESSION
+   - Si el texto menciona "unirse", "unirme", "join" + UUID → JOIN_SESSION
    - Si el texto menciona un PRODUCTO/PLATO/BEBIDA (cerveza, pizza, hamburguesa, pasta, postre, etc.) → probablemente ASSIGN_ITEM_TO_USER
    - Si el texto menciona "paga", "pago", "pagar" + un producto → ASSIGN_ITEM_TO_USER
    - Si el texto menciona "iniciar", "crear", "empezar", "nueva sesión" + una actividad/evento → CREATE_SESSION
@@ -121,6 +150,7 @@ REGLAS DE DECISIÓN:
 7. La descripción de la sesión debe ser clara y descriptiva, capturando la esencia de la actividad
 8. Los textos cortos y coloquiales (ej: "paga cerveza") generalmente son ASSIGN_ITEM_TO_USER, NO CREATE_SESSION
 9. Si el texto es un saludo, pregunta informativa, o completamente irrelevante, usa UNKNOWN
+10. IMPORTANTE: Detecta correctamente CREATE_SESSION incluso en textos simples como "crear sesión", "nueva sesión", etc.
 
 EJEMPLOS:
 
@@ -178,6 +208,42 @@ Output:
   "close_session_data": {
     "session_id": 3,
     "session_description": null
+  }
+}
+
+Input: "Me quiero unir a la sesión 550e8400-e29b-41d4-a716-446655440000"
+Output:
+{
+  "action": "join_session",
+  "join_session_data": {
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+
+Input: "550e8400-e29b-41d4-a716-446655440000"
+Output:
+{
+  "action": "join_session",
+  "join_session_data": {
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+
+Input: "Unirme a 550e8400-e29b-41d4-a716-446655440000"
+Output:
+{
+  "action": "join_session",
+  "join_session_data": {
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+
+Input: "Quiero entrar a la sesión de mi amigo: 550e8400-e29b-41d4-a716-446655440000"
+Output:
+{
+  "action": "join_session",
+  "join_session_data": {
+    "session_id": "550e8400-e29b-41d4-a716-446655440000"
   }
 }
 
