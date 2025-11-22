@@ -7,9 +7,7 @@ from app.logic.message_receiver import handle_image_message
 from app.routers.deps import get_db
 from app.config import settings
 
-router = APIRouter()
-
-router.prefix("/webhooks/kapso")
+router = APIRouter(prefix="/webhooks/kapso")
 
 
 def get_sync_session() -> Session:
@@ -37,8 +35,7 @@ async def kapso_webhook(
 ):
     if payload.message.is_image():
         # Create sync session for synchronous functions
-        sync_session_factory = get_sync_session()
-        sync_db = sync_session_factory()
+        sync_db = get_sync_session()
         try:
             await handle_image_message(
                 sync_db,
