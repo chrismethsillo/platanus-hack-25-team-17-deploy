@@ -1,16 +1,19 @@
+import logging
 from app.models.receipt import ReceiptExtraction
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.models.invoice import Invoice
 from app.database.models.item import Item
 from app.database.sql.user import get_user_by_phone_number
 from app.database.sql.session import get_active_session_by_user_id
 
 
-def create_invoice_with_items(
-    db_session: Session, receipt: ReceiptExtraction, tip: float, sender: str
+async def create_invoice_with_items(
+    db_session: AsyncSession, receipt: ReceiptExtraction, tip: float, sender: str
 ) -> tuple[Invoice, list[Item]]:
-    user = get_user_by_phone_number(db_session, sender)
-    session = get_active_session_by_user_id(db_session, user.id)
+    logging.info(f"Creating invoice with items for receipt: {receipt}")
+    user = await get_user_by_phone_number(db_session, sender)
+    session = await get_active_session_by_user_id(db_session, user.id)
+    logging.info(f"Session: {session}")
     invoice = Invoice(
         description=receipt.merchant,
         total=receipt.total_amount,
@@ -19,7 +22,7 @@ def create_invoice_with_items(
         session_id=session.id,
     )
     db_session.add(invoice)
-    db_session.flush()
+    await db_session.flush()
     items = []
     for item in receipt.items:
         for _ in range(item.count):
@@ -36,5 +39,5 @@ def create_invoice_with_items(
             )
             db_session.add(item)
             items.append(item)
-    db_session.commit()
+    await db_session.commit()
     return invoice, items

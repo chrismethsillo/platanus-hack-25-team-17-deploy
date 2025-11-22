@@ -35,9 +35,9 @@ class ReceiptExtraction(BaseModel):
 
     merchant: str = Field(..., description="Merchant or restaurant name")
     receipt_date: date = Field(
+        default_factory=lambda: datetime.now(tz=timezone.utc).replace(tzinfo=None).date(),
         description="Receipt date in YYYY-MM-DD format",
         alias="date",
-        default_factory=lambda: datetime.now(tz=timezone.utc).replace(tzinfo=None).date(),
     )
     total_amount: float = Field(..., gt=0, description="Total amount of the receipt")
     tip: float = Field(

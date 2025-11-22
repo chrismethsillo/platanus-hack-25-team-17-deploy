@@ -1,6 +1,6 @@
 """Item model definition."""
 
-from sqlalchemy import Numeric, ForeignKey, Boolean
+from sqlalchemy import Numeric, ForeignKey, Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import Optional
 
@@ -32,15 +32,15 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), nullable=False)
-    debtor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    debtor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=True)
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     paid_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0.0)
     tip: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False, default=0.0)
     total: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     payment_id: Mapped[Optional[int]] = mapped_column(ForeignKey("payments.id"), nullable=True)
+    description: Mapped[str] = mapped_column(String(500), nullable=True)
 
-    # Relationships
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items")
 
     debtor: Mapped["User"] = relationship("User", back_populates="debtor_items", foreign_keys=[debtor_id])

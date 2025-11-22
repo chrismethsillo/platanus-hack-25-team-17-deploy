@@ -86,6 +86,11 @@ class KapsoImage(BaseModel):
     link: str
 
 
+class KapsoConversation(BaseModel):
+    contact_name: str
+    phone_number: str
+
+
 class KapsoMessage(BaseModel):
     id: str
     sender: str = Field(..., alias="from")
@@ -102,3 +107,4 @@ class KapsoMessage(BaseModel):
 
 class KapsoWebhookMessageReceived(BaseModel):
     message: KapsoMessage
+    conversation: KapsoConversation
