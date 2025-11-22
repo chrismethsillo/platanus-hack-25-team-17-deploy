@@ -1,113 +1,81 @@
-"""OCR service for receipt extraction using Google Gemini 2.5 Flash."""
+"""OCR service for receipt extraction using LangChain with OpenAI."""
 
-import json
+import base64
 import logging
-from typing import Any
 
-import google.generativeai as genai
 import httpx
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from enum import Enum
+from pydantic import BaseModel
 
 from app.config import settings
 from app.models.receipt import DocumentExtraction, ReceiptExtraction, TransferExtraction
 
 logger = logging.getLogger(__name__)
 
-# System instruction for Gemini
-SYSTEM_INSTRUCTION = """Eres un motor OCR especializado en documentos financieros. Tu tarea es identificar el tipo de documento y extraer datos estructurados.
 
-PRIMERO: Identifica si el documento es una BOLETA/RECIBO de restaurante o una TRANSFERENCIA bancaria.
+class DocumentType(str, Enum):
+    """Document types for classification."""
 
-Si es una BOLETA/RECIBO:
-- Busca explícitamente campos de 'Propina', 'Tip' o 'Servicio'.
-- Devuelve un JSON con: "document_type": "receipt", y los campos: "merchant", "date", "total_amount", "tip", "items".
-- "items": [{"description": "descripción del ítem", "amount": 0.0, "count": 1}]
-- Si la propina no aparece explícitamente, el valor es 0.
-
-Si es una TRANSFERENCIA:
-- Devuelve un JSON con: "document_type": "transfer", y los campos: "recipient", "amount", "description".
-- "recipient": nombre del destinatario o identificador de cuenta.
-- "amount": monto de la transferencia.
-- "description": descripción o referencia de la transferencia (puede ser null si no existe).
-
-No uses bloques de código markdown. Devuelve el JSON crudo.
-
-Formato esperado para BOLETA:
-{
-  "document_type": "receipt",
-  "merchant": "nombre del comercio",
-  "date": "YYYY-MM-DD",
-  "total_amount": 0.0,
-  "tip": 0.0,
-  "items": [
-    {"description": "descripción del ítem", "amount": 0.0}
-  ]
-}
-
-Formato esperado para TRANSFERENCIA:
-{
-  "document_type": "transfer",
-  "recipient": "nombre del destinatario",
-  "amount": 0.0,
-  "description": "descripción o referencia (puede ser null)"
-}"""
+    RECEIPT = "receipt"
+    TRANSFER = "transfer"
 
 
-def _parse_gemini_response(response_text: str) -> dict[str, Any]:
-    """Parse Gemini response and extract JSON.
+class ClassificationSchema(BaseModel):
+    """Schema for document classification."""
 
-    Handles cases where Gemini includes explanatory text before/after the JSON,
-    or wraps JSON in markdown code blocks.
+    document_type: DocumentType
+
+
+# Pydantic schemas for structured output (simplified for OpenAI compatibility)
+class ItemSchema(BaseModel):
+    """Schema for individual receipt item."""
+
+    description: str
+    amount: float
+    count: int
+
+
+class ReceiptLLMSchema(BaseModel):
+    """Schema for LLM to extract receipt data."""
+
+    merchant: str
+    date: str
+    total_amount: float
+    tip: float
+    items: list[ItemSchema]
+
+
+class TransferLLMSchema(BaseModel):
+    """Schema for LLM to extract transfer data."""
+
+    recipient: str
+    amount: float
+    description: str | None = None
+
+
+def _initialize_openai_model(temperature: float = 0.2) -> ChatOpenAI:
+    """Initialize OpenAI model with LangChain.
 
     Args:
-        response_text: Raw response text from Gemini
+        temperature: Model temperature for consistency (default 0.2)
 
     Returns:
-        dict: Parsed JSON data
+        ChatOpenAI: Initialized model
 
     Raises:
-        ValueError: If JSON cannot be parsed
+        ValueError: If OPENAI_API_KEY not configured
     """
-    import re
+    if not settings.OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY not configured in environment variables")
 
-    text = response_text.strip()
-
-    # First, try to find JSON inside markdown code blocks (```json ... ``` or ``` ... ```)
-    json_block_pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
-    json_match = re.search(json_block_pattern, text, re.DOTALL)
-    if json_match:
-        text = json_match.group(1).strip()
-    else:
-        # Try to find JSON object by finding balanced braces
-        # Find the first { and then find the matching }
-        first_brace = text.find("{")
-        if first_brace != -1:
-            # Count braces to find the matching closing brace
-            brace_count = 0
-            for i in range(first_brace, len(text)):
-                if text[i] == "{":
-                    brace_count += 1
-                elif text[i] == "}":
-                    brace_count -= 1
-                    if brace_count == 0:
-                        # Found the matching closing brace
-                        text = text[first_brace : i + 1]
-                        break
-        else:
-            # Fallback: try to parse the whole text after removing markdown
-            if text.startswith("```json"):
-                text = text[7:]
-            elif text.startswith("```"):
-                text = text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Gemini response as JSON: {e}")
-        logger.error(f"Response text: {response_text[:500]}")
-        raise ValueError(f"Invalid JSON response from Gemini: {str(e)}")
+    return ChatOpenAI(
+        model="gpt-4o-mini",
+        api_key=settings.OPENAI_API_KEY,
+        temperature=temperature,
+        max_tokens=2048,
+    )
 
 
 async def download_image_from_url(image_url: str) -> tuple[bytes, str]:
@@ -154,7 +122,9 @@ async def download_image_from_url(image_url: str) -> tuple[bytes, str]:
             if not image_content:
                 raise ValueError("Downloaded image is empty")
 
-            logger.info(f"Successfully downloaded image: {len(image_content)} bytes, type: {mime_type}")
+            logger.info(
+                f"Successfully downloaded image: {len(image_content)} bytes, type: {mime_type}"
+            )
             return image_content, mime_type
 
     except httpx.HTTPError as e:
@@ -165,99 +135,169 @@ async def download_image_from_url(image_url: str) -> tuple[bytes, str]:
         raise RuntimeError(f"Failed to download image: {str(e)}") from e
 
 
-async def scan_receipt_with_gemini(
+async def scan_receipt(
     file_content: bytes, mime_type: str, custom_prompt: str | None = None
 ) -> DocumentExtraction:
-    """Scan document image using Google Gemini 2.5 Flash OCR.
+    """Scan document image using LangChain with OpenAI and structured outputs.
 
+    Uses Pydantic models for automatic validation and type safety.
     Detects if the document is a receipt or transfer and extracts data accordingly.
 
     Args:
         file_content: Binary content of the image file
         mime_type: MIME type of the image (e.g., 'image/jpeg', 'image/png')
-        custom_prompt: Optional custom prompt/instruction for Gemini. If None, uses default.
+        custom_prompt: Optional custom instruction to prepend. If None, uses default.
 
     Returns:
         DocumentExtraction: Validated document data (receipt or transfer)
 
     Raises:
         ValueError: If API key is missing, API call fails, or response is invalid
-        RuntimeError: If Gemini API returns an error
+        RuntimeError: If OpenAI API returns an error
     """
-    # Validate API key
-    if not settings.GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY not configured in environment variables")
-
     try:
-        # Configure Gemini
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        # Initialize model
+        model = _initialize_openai_model()
 
-        # Use custom prompt if provided, otherwise use default
-        system_instruction = custom_prompt if custom_prompt else SYSTEM_INSTRUCTION
+        # Encode image to base64 for LangChain
+        image_b64 = base64.b64encode(file_content).decode()
+        image_url = f"data:{mime_type};base64,{image_b64}"
 
-        # Initialize model with system instruction
-        # Using gemini-2.5-flash as specified
-        # If model is not available, try gemini-2.0-flash-exp or gemini-1.5-flash
-        try:
-            model = genai.GenerativeModel(
-                model_name="gemini-2.5-flash",
-                system_instruction=system_instruction,
-            )
-        except Exception:
-            # Fallback to available model if 2.5-flash doesn't exist yet
-            logger.warning("gemini-2.5-flash not available, using gemini-2.0-flash-exp")
-            model = genai.GenerativeModel(
-                model_name="gemini-2.0-flash-exp",
-                system_instruction=system_instruction,
-            )
+        # Step 1: Classify document type with structured output
+        classify_prompt = (
+            custom_prompt
+            or """Analiza cuidadosamente esta imagen y clasifícala.
 
-        # Prepare image part
-        image_part = {
-            "mime_type": mime_type,
-            "data": file_content,
-        }
+CRITERIOS PARA 'transfer' (Transferencia/Depósito):
+- Es una captura de pantalla de app bancaria o comprobante digital.
+- Contiene palabras como: "Transferencia realizada", "Comprobante", "Destinatario", "Monto transferido", "Cuenta origen/destino".
+- Muestra datos bancarios: Banco, RUT/DNI, Nro de operación.
+- NO tiene lista de productos consumidos.
 
-        # Generate content
-        logger.info("Sending image to Gemini for OCR extraction")
-        response = model.generate_content(
-            contents=[image_part],
-            generation_config={
-                "temperature": 0.1,  # Low temperature for consistent extraction
-                "max_output_tokens": 2048,
-            },
+CRITERIOS PARA 'receipt' (Boleta/Recibo):
+- Es una foto de un papel físico o ticket digital de compra.
+- Contiene: Lista de productos/platos, precios individuales, "Total a pagar", "Propina", "Mesa", "Garzón".
+- Nombre de un restaurante, tienda o comercio.
+- Desglose de IVA o impuestos.
+
+Selecciona el tipo de documento correcto."""
         )
 
-        # Extract response text
-        if not response.text:
-            raise ValueError("Empty response from Gemini API")
+        classify_message = HumanMessage(
+            content=[
+                {"type": "text", "text": classify_prompt},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]
+        )
 
-        logger.info("Received response from Gemini, parsing JSON")
-        response_data = _parse_gemini_response(response.text)
+        logger.info("Classifying document type with OpenAI structured output")
+        classifier_model = model.with_structured_output(ClassificationSchema)
+        classification = await classifier_model.ainvoke([classify_message])
+        doc_type = classification.document_type.value
 
-        # Validate document type
-        document_type = response_data.get("document_type", "").lower()
-        if document_type not in ["receipt", "transfer"]:
-            raise ValueError(f"Invalid document_type: {document_type}. Must be 'receipt' or 'transfer'")
+        logger.info(f"Document classified as: {doc_type}")
 
-        # Create DocumentExtraction based on type
-        if document_type == "receipt":
-            receipt_data = ReceiptExtraction(**response_data)
+        # Step 2: Extract structured data based on type
+        if doc_type == "receipt":
+            # Configure model with structured output for receipts
+            structured_model = model.with_structured_output(ReceiptLLMSchema)
+
+            extract_prompt = """Eres un experto en extracción de datos de boletas y recibos financieros.
+Analiza la imagen y extrae la siguiente información estructurada:
+
+REGLAS DE EXTRACCIÓN:
+1. merchant: Nombre del comercio, restaurante o proveedor.
+2. date: Fecha del documento en formato YYYY-MM-DD.
+3. total_amount: Monto TOTAL pagado (incluyendo propina e impuestos).
+4. tip: Busca explícitamente 'Propina', 'Tip', 'Servicio' o 'Service Charge'. Si no aparece nada explícito, el valor es 0.
+5. items: Lista detallada de ítems consumidos.
+   - description: Nombre del producto/plato.
+   - amount: Precio unitario o total por línea.
+   - count: Cantidad (default 1 si no se especifica).
+
+IMPORTANTE:
+- Si hay descuentos, el total_amount debe ser el monto FINAL pagado.
+- Sé preciso con los montos numéricos.
+"""
+
+            extract_message = HumanMessage(
+                content=[
+                    {"type": "text", "text": extract_prompt},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ]
+            )
+
+            logger.info("Extracting receipt data with structured output")
+            llm_data = await structured_model.ainvoke([extract_message])
+
+            # Convert LLM schema to app schema using model_validate with aliases
+            receipt_dict = {
+                "merchant": llm_data.merchant,
+                "date": llm_data.date,  # Use alias "date" instead of "receipt_date"
+                "total_amount": llm_data.total_amount,
+                "tip": llm_data.tip,
+                "items": [
+                    {
+                        "description": item.description,
+                        "amount": item.amount,
+                        "count": item.count,
+                    }
+                    for item in llm_data.items
+                ],
+            }
+            receipt_data = ReceiptExtraction.model_validate(receipt_dict)
+
             document_extraction = DocumentExtraction(
                 document_type="receipt",
                 receipt=receipt_data,
                 transfer=None,
             )
+
             logger.info(
                 f"Successfully extracted receipt: {receipt_data.merchant}, "
                 f"Total: ${receipt_data.total_amount}, Tip: ${receipt_data.tip}"
             )
+
         else:  # transfer
-            transfer_data = TransferExtraction(**response_data)
+            # Configure model with structured output for transfers
+            structured_model = model.with_structured_output(TransferLLMSchema)
+
+            extract_prompt = """Eres un experto en extracción de datos de transferencias bancarias.
+Analiza la imagen y extrae la siguiente información estructurada:
+
+REGLAS DE EXTRACCIÓN:
+1. recipient: Nombre del destinatario, cuenta destino o beneficiario.
+2. amount: Monto transferido (número positivo).
+3. description: Glosa, mensaje, comentario o referencia de la transferencia (si existe).
+
+IMPORTANTE:
+- Ignora saldos de cuenta, busca el monto de la transacción específica.
+- Extrae el nombre completo del destinatario si es posible.
+"""
+
+            extract_message = HumanMessage(
+                content=[
+                    {"type": "text", "text": extract_prompt},
+                    {"type": "image_url", "image_url": {"url": image_url}},
+                ]
+            )
+
+            logger.info("Extracting transfer data with structured output")
+            llm_data = await structured_model.ainvoke([extract_message])
+
+            # Convert LLM schema to app schema
+            transfer_data = TransferExtraction(
+                recipient=llm_data.recipient,
+                amount=llm_data.amount,
+                description=llm_data.description,
+            )
+
             document_extraction = DocumentExtraction(
                 document_type="transfer",
                 receipt=None,
                 transfer=transfer_data,
             )
+
             logger.info(
                 f"Successfully extracted transfer: Recipient={transfer_data.recipient}, Amount=${transfer_data.amount}"
             )
@@ -268,5 +308,5 @@ async def scan_receipt_with_gemini(
         # Re-raise validation errors
         raise
     except Exception as e:
-        logger.error(f"Error calling Gemini API: {str(e)}", exc_info=True)
-        raise RuntimeError(f"Failed to process receipt with Gemini: {str(e)}") from e
+        logger.error(f"Error calling OpenAI API via LangChain: {str(e)}", exc_info=True)
+        raise RuntimeError(f"Failed to process document with OpenAI: {str(e)}") from e
