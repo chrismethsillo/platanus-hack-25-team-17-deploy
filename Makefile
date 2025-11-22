@@ -1,4 +1,4 @@
-.PHONY: help install dev run test lint lint-fix format format-all clean pre-commit pre-commit-all migrate upgrade downgrade docker-up docker-down
+.PHONY: help install dev run test lint lint-fix format format-all clean pre-commit pre-commit-all migrate upgrade downgrade db docker-up docker-down
 
 help:
 	@echo "Available commands:"
@@ -17,6 +17,7 @@ help:
 	@echo "  make migrate          - Create new migration (usage: make migrate msg='description')"
 	@echo "  make upgrade          - Run migrations"
 	@echo "  make downgrade        - Rollback last migration"
+	@echo "  make db               - Start only database container"
 	@echo "  make docker-up        - Start Docker containers"
 	@echo "  make docker-down      - Stop Docker containers"
 	@echo "  make docker-logs      - View Docker logs"
@@ -94,6 +95,9 @@ upgrade:
 
 downgrade:
 	uv run alembic downgrade -1
+
+db:
+	docker-compose up -d db
 
 docker-up:
 	docker-compose up -d
