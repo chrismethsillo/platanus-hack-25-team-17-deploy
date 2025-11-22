@@ -20,6 +20,7 @@ wheels/
 platanus.egg-info/
 .installed.cfg
 *.egg
+docker-compose.yml
 uv.lock
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.

@@ -43,8 +43,6 @@ class Item(Base):
     # Relationships
     invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items")
 
-    debtor: Mapped["User"] = relationship(
-        "User", back_populates="debtor_items", foreign_keys=[debtor_id]
-    )
+    debtor: Mapped["User"] = relationship("User", back_populates="debtor_items", foreign_keys=[debtor_id])
 
     payment: Mapped[Optional["Payment"]] = relationship("Payment", back_populates="items")

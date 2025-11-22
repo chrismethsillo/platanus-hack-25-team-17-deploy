@@ -29,8 +29,11 @@ class Invoice(Base):
     total: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0.0)
     pending_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0.0)
     payer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"), nullable=False)
 
     # Relationships
     payer: Mapped["User"] = relationship("User", back_populates="invoices", foreign_keys=[payer_id])
 
     items: Mapped[list["Item"]] = relationship("Item", back_populates="invoice")
+
+    session: Mapped["Session"] = relationship("Session", back_populates="invoices", foreign_keys=[session_id])

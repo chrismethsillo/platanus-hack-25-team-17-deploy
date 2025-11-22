@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
 
+    KAPSO_PHONE_NUMBER: str | None = None
+
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000

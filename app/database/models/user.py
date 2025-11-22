@@ -29,13 +29,9 @@ class User(Base):
     phone_number: Mapped[str] = mapped_column(String(50), nullable=False)
 
     # Relationships
-    invoices: Mapped[list["Invoice"]] = relationship(
-        "Invoice", back_populates="payer", foreign_keys="Invoice.payer_id"
-    )
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="payer", foreign_keys="Invoice.payer_id")
 
-    debtor_items: Mapped[list["Item"]] = relationship(
-        "Item", back_populates="debtor", foreign_keys="Item.debtor_id"
-    )
+    debtor_items: Mapped[list["Item"]] = relationship("Item", back_populates="debtor", foreign_keys="Item.debtor_id")
 
     payments_made: Mapped[list["Payment"]] = relationship(
         "Payment", back_populates="payer", foreign_keys="Payment.payer_id"
@@ -45,6 +41,4 @@ class User(Base):
         "Payment", back_populates="receiver", foreign_keys="Payment.receiver_id"
     )
 
-    sessions: Mapped[list["Session"]] = relationship(
-        secondary="session_users", back_populates="users"
-    )
+    sessions: Mapped[list["Session"]] = relationship(secondary="session_users", back_populates="users")

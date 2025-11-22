@@ -88,7 +88,7 @@ class KapsoImage(BaseModel):
 
 class KapsoMessage(BaseModel):
     id: str
-    sender: Field(..., alias="from")
+    sender: str = Field(..., alias="from")
     received_at: datetime = datetime.now(tz=timezone.utc).replace(tzinfo=None)
     text: KapsoBody | None = None
     image: KapsoImage | None = None

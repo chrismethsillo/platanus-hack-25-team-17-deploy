@@ -7,7 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.database import Base
+from app.database import Base
 from app.main import app
 
 # Test database URL (use a separate test database)
@@ -70,7 +70,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient]:
     Yields:
         AsyncClient: Test HTTP client
     """
-    from app.api.deps import get_db
+    from app.routers.deps import get_db
 
     async def override_get_db() -> AsyncGenerator[AsyncSession]:
         yield db_session
