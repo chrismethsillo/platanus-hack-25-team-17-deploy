@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Google Gemini API
     GEMINI_API_KEY: str | None = None
 
+    # OpenAI API
+    OPENAI_API_KEY: str | None = None
+
     # CORS
     BACKEND_CORS_ORIGINS: list[str] | str = []
 

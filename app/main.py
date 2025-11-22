@@ -55,6 +55,9 @@ app.middleware("http")(logging_middleware)
 app.middleware("http")(error_handler_middleware)
 
 
+# Include routers
+
+
 # Scalar documentation endpoint
 @app.get("/docs", include_in_schema=False)
 async def scalar_html() -> HTMLResponse:
