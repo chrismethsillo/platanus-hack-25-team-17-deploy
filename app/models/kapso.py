@@ -1,7 +1,7 @@
 from pydantic import BaseModel, root_validator, Field
 from enum import StrEnum
 from typing import Literal
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class KapsoMessageType(StrEnum):
@@ -89,7 +89,7 @@ class KapsoImage(BaseModel):
 class KapsoMessage(BaseModel):
     id: str
     sender: Field(..., alias="from")
-    received_at: datetime = datetime.now()
+    received_at: datetime = datetime.now(tz=timezone.utc).replace(tzinfo=None)
     text: KapsoBody | None = None
     image: KapsoImage | None = None
 
