@@ -81,11 +81,15 @@ class CRUDBase(Generic[ModelType]):
         Returns:
             Created model instance
         """
-        db_obj = self.model(**obj_in)
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+        try:
+            db_obj = self.model(**obj_in)
+            db.add(db_obj)
+            await db.commit()
+            await db.refresh(db_obj)
+            return db_obj
+        except Exception:
+            await db.rollback()
+            raise
 
     async def update(
         self, db: AsyncSession, *, db_obj: ModelType, obj_in: dict[str, Any]
@@ -100,14 +104,18 @@ class CRUDBase(Generic[ModelType]):
         Returns:
             Updated model instance
         """
-        for field, value in obj_in.items():
-            if hasattr(db_obj, field):
-                setattr(db_obj, field, value)
+        try:
+            for field, value in obj_in.items():
+                if hasattr(db_obj, field):
+                    setattr(db_obj, field, value)
 
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
-        return db_obj
+            db.add(db_obj)
+            await db.commit()
+            await db.refresh(db_obj)
+            return db_obj
+        except Exception:
+            await db.rollback()
+            raise
 
     async def delete(self, db: AsyncSession, *, id: Any) -> ModelType | None:
         """Delete a record by ID.
@@ -121,6 +129,10 @@ class CRUDBase(Generic[ModelType]):
         """
         obj = await self.get(db, id=id)
         if obj:
-            await db.delete(obj)
-            await db.commit()
+            try:
+                await db.delete(obj)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
         return obj

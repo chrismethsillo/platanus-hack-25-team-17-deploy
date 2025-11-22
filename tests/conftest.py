@@ -5,25 +5,18 @@ from collections.abc import AsyncGenerator, Generator
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.database import Base
 from app.main import app
 
 # Test database URL (use a separate test database)
 TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/platanus_test_db"
-
-# Create test engine
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-
-# Create test session factory
-TestSessionLocal = async_sessionmaker(
-    test_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False,
-)
 
 
 @pytest.fixture(scope="session")
@@ -33,16 +26,40 @@ def event_loop() -> Generator:
     Yields:
         Event loop instance
     """
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
     yield loop
     loop.close()
 
 
+@pytest.fixture(scope="session")
+async def test_engine() -> AsyncGenerator[AsyncEngine]:
+    """Create test database engine.
+
+    Yields:
+        AsyncEngine: Test database engine
+    """
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        echo=False,
+        pool_pre_ping=False,  # Disable pre-ping to avoid event loop issues
+        pool_size=1,  # Single connection to avoid conflicts
+        max_overflow=0,
+    )
+    yield engine
+    await engine.dispose()
+    # Give time for connections to close
+    await asyncio.sleep(0.1)
+
+
 @pytest.fixture(scope="function")
-async def db_session() -> AsyncGenerator[AsyncSession]:
+async def db_session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession]:
     """Create a test database session.
 
     Creates tables before each test and drops them after.
+
+    Args:
+        test_engine: Test database engine
 
     Yields:
         AsyncSession: Test database session
@@ -50,14 +67,28 @@ async def db_session() -> AsyncGenerator[AsyncSession]:
     # Create tables
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await test_engine.dispose(close=False)  # Ensure connection is released
+
+    # Create session factory for this test
+    TestSessionLocal = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
 
     # Create session
     async with TestSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        finally:
+            await session.close()
 
     # Drop tables
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    await test_engine.dispose(close=False)  # Ensure connection is released
 
 
 @pytest.fixture(scope="function")
