@@ -380,8 +380,58 @@ async def handle_voice_message(db_session: AsyncSession, conversation: KapsoConv
         send_text_message(sender, build_session_id_link(session.id))
 
 
+async def parse_payment_method_from_message(message: str) -> tuple[str, str] | None:
+    """Parse payment method information from user message using AI.
+    
+    Uses AI to extract bank name and full description from user's message.
+    Accepts various formats including multi-line bank account information.
+    
+    Args:
+        message: User message text
+        
+    Returns:
+        Tuple of (bank_name, description) if payment method found, None otherwise
+    """
+    from app.services.payment_method_agent import extract_payment_method_from_message
+    
+    try:
+        result = await extract_payment_method_from_message(message)
+        
+        # Only return if AI detected it's a payment method
+        if result.is_payment_method and result.bank_name and result.description:
+            return (result.bank_name, result.description)
+        
+        return None
+    except Exception as e:
+        logging.error(f"Error parsing payment method with AI: {e}", exc_info=True)
+        return None
+
+
 async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody, sender: str) -> None:
     text_content = message_body.body if hasattr(message_body, "body") else str(message_body)
+
+    # First, check if this might be a payment method creation
+    payment_method_info = await parse_payment_method_from_message(text_content)
+    if payment_method_info:
+        name, description = payment_method_info
+        user = await get_user_by_phone_number(db_session, sender)
+        if user:
+            from app.database.sql.payment_methods import create_payment_method
+            try:
+                await create_payment_method(db_session, user.id, name, description)
+                success_message = f"✅ Método de pago '{name}' agregado exitosamente.\n\n"
+                if description:
+                    success_message += "Información bancaria:\n"
+                    description_lines = description.split('\n')
+                    for line in description_lines:
+                        success_message += f"  {line}\n"
+                success_message += "\nAhora puedes usar el comando 'recaudar' o 'cobrar' para enviar los métodos de pago a los deudores."
+                send_text_message(sender, success_message)
+                return
+            except Exception as e:
+                logging.error(f"Error creating payment method: {e}", exc_info=True)
+                send_text_message(sender, f"❌ Error al agregar el método de pago: {str(e)}")
+                return
 
     action_to_execute = await process_user_command(text_content)
 
@@ -603,4 +653,41 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
         if not await check_user_has_active_session(db_session, sender):
             send_text_message(sender, NO_ACTIVE_SESSION_MESSAGE)
             return
-        await send_collection_message_to_all_debtors(db_session, sender)
+        
+        # Get the user who triggered collect
+        collector_user = await get_user_by_phone_number(db_session, sender)
+        if not collector_user:
+            send_text_message(sender, "Usuario no encontrado.")
+            return
+        
+        # Check if collector has payment methods
+        from app.database.sql.payment_methods import get_user_payment_methods
+        collector_payment_methods = await get_user_payment_methods(db_session, collector_user.id)
+        
+        if not collector_payment_methods:
+            # Ask user for payment method
+            send_text_message(
+                sender,
+                "❌ No tienes un método de pago configurado.\n\n"
+                "Por favor, proporciona tu método de pago o información bancaria."
+            )
+            return
+        
+        # Send collection messages to all debtors with collector's payment methods
+        await send_collection_message_to_all_debtors(db_session, sender, collector_user.id, collector_payment_methods)
+        
+        # Send confirmation to collector
+        confirmation_parts = [
+            "✅ Se han enviado los mensajes de recaudación a todos los deudores con tus métodos de pago.\n",
+            "Métodos de pago enviados:"
+        ]
+        for pm in collector_payment_methods:
+            confirmation_parts.append(f"\n• {pm.name}:")
+            if pm.description:
+                description_lines = pm.description.split('\n')
+                for line in description_lines:
+                    confirmation_parts.append(f"  {line}")
+            else:
+                confirmation_parts.append("  Sin descripción")
+        
+        send_text_message(sender, "\n".join(confirmation_parts))
