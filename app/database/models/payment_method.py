@@ -26,4 +26,4 @@ class PaymentMethod(Base):
     description: Mapped[str] = mapped_column(String(500), nullable=True)
     id_user: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
-    user: Mapped["User"] = relationship("User", back_populates="payment_methods", foreign_keys=[id_user])
+    user: Mapped["User"] = relationship("User", foreign_keys=[id_user])
