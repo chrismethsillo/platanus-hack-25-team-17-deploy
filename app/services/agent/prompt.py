@@ -109,7 +109,19 @@ ACCIONES DISPONIBLES:
            → item_description: "cerveza", user_name: null (se asignará al usuario que envía el mensaje)
        - Nota: Prioriza IDs numéricos cuando estén disponibles. Si solo hay nombres, usa user_name. Si hay descripción del ítem, usa item_description. Si el texto es muy corto y solo menciona un producto/bebida/plato, es muy probable que sea ASSIGN_ITEM_TO_USER. Si hay múltiples items con la misma descripción, el sistema automáticamente asignará uno de los disponibles sin asignar, no es necesario especificar cuál.
 
-5. UNKNOWN (desconocida):
+5. COLLECT (trigger_collect):
+   - Descripción: Desencadenar el proceso de recaudación para una sesión
+   - Cuándo usar: Cuando el usuario quiere desencadenar el proceso de recaudación para una sesión
+   - Palabras clave: "recaudar", "cobrar", "recaudar dinero", "cobrar dinero", "recaudar fondos", "cobrar fondos"
+   - Datos a extraer:
+     - Ejemplos:
+       * "Recaudar dinero para la sesión 550e8400-e29b-41d4-a716-446655440000"
+         * "Cobrar dinero para la sesión de la cena de aniversario"
+         * "Recaudar fondos para la sesión de la cena de aniversario"
+         * "Cobrar fondos para la sesión de la cena de aniversario"
+         * "Recauda dinero para la sesión activa"
+
+6. UNKNOWN (desconocida):
    - Descripción: Usar cuando el texto no corresponde a ninguna de las acciones disponibles o la intención no es clara
    - Cuándo usar: Cuando el texto no menciona ninguna de las acciones disponibles, es ambiguo, o no tiene relación con el sistema de gestión de sesiones y facturas
    - Ejemplos de textos que deberían ser UNKNOWN:

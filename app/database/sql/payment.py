@@ -20,10 +20,10 @@ async def get_pending_items_by_user_id(db_session: AsyncSession, user_id: int) -
         List of items where the user is the debtor and is_paid is False
     """
     from sqlalchemy import or_
-    
+
     result = await db_session.execute(
         select(Item)
-        .options(selectinload(Item.invoice))
+        .options(selectinload(Item.invoice).selectinload(Invoice.payer).selectinload(User.name))
         .join(Invoice, Item.invoice_id == Invoice.id)
         .join(SessionModel, Invoice.session_id == SessionModel.id)
         .outerjoin(session_users, SessionModel.id == session_users.c.session_id)

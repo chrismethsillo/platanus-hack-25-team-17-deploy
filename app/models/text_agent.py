@@ -9,6 +9,7 @@ class ActionType(StrEnum):
     CLOSE_SESSION = "close_session"
     JOIN_SESSION = "join_session"
     ASSIGN_ITEM_TO_USER = "assign_item_to_user"
+    COLLECT = "trigger_collect"
     UNKNOWN = "unknown"
 
 

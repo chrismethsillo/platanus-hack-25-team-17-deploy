@@ -25,6 +25,7 @@ from app.database.sql.session import (
     join_session,
     get_all_session_users,
 )
+from app.logic.collection_logic import send_collection_message_to_all_debtors
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.sql.user import get_user_by_phone_number, create_user
 from app.logic.message_sender import send_message_to_all_session_users
@@ -66,7 +67,9 @@ async def handle_receipt(db_session: AsyncSession, receipt: ReceiptExtraction, s
     tip = receipt.tip / receipt.total_amount
     try:
         invoice, items = await create_invoice_with_items(db_session, receipt, tip, sender)
-        await send_message_to_all_session_users(db_session, invoice.session_id, build_invoice_created_message(invoice, items))
+        await send_message_to_all_session_users(
+            db_session, invoice.session_id, build_invoice_created_message(invoice, items)
+        )
     except MultipleResultsFound:
         send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
         return
@@ -92,23 +95,23 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
     transfer_amount = float(transfer.amount)
 
     tolerance = 0.01
-    
+
     # Si el monto no coincide, mostrar información detallada pero no bloquear
     if abs(transfer_amount - total_pending) > tolerance:
         # Construir mensaje detallado con los items pendientes
         items_detail = []
         for item in pending_items:
             items_detail.append(f"  • {item.description or '(sin descripción)'}: ${item.total:.2f}")
-        
+
         items_list = "\n".join(items_detail)
-        
+
         if transfer_amount < total_pending:
             # Pago parcial - permitir pero informar
             send_text_message(
                 sender,
                 f"⚠️ El monto de la transferencia (${transfer_amount:.2f}) es menor que el total pendiente (${total_pending:.2f}).\n\n"
                 f"📋 Tus items pendientes:\n{items_list}\n\n"
-                f"Se procesará un pago parcial. El resto quedará pendiente."
+                f"Se procesará un pago parcial. El resto quedará pendiente.",
             )
             # Continuar con el procesamiento del pago parcial
         else:
@@ -117,7 +120,7 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
                 sender,
                 f"⚠️ El monto de la transferencia (${transfer_amount:.2f}) es mayor que el total pendiente (${total_pending:.2f}).\n\n"
                 f"📋 Tus items pendientes:\n{items_list}\n\n"
-                f"Por favor, verifica el monto de la transferencia."
+                f"Por favor, verifica el monto de la transferencia.",
             )
             return
 
@@ -138,7 +141,7 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
             item_total = float(item.total)
             current_paid = float(item.paid_amount) if item.paid_amount else 0.0
             remaining_item_amount = item_total - current_paid
-            
+
             if remaining_item_amount <= remaining_amount:
                 # Item completo o casi completo
                 items_to_pay.append(item)
@@ -156,6 +159,7 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
         if transfer_amount < total_pending:
             # Crear pago pero no marcar todos los items como pagados completamente
             from app.database.models.payment import Payment
+
             payment = Payment(
                 payer_id=user.id,
                 receiver_id=receiver_id,
@@ -169,12 +173,12 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
                 item.payment_id = payment.id
                 item_total = float(item.total)
                 amount_to_pay = partial_payment_info.get(item.id, item_total)
-                
+
                 # Actualizar paid_amount
                 current_paid = float(item.paid_amount) if item.paid_amount else 0.0
                 new_paid = current_paid + amount_to_pay
                 item.paid_amount = new_paid
-                
+
                 # Si el item está completamente pagado (o casi)
                 if new_paid >= item_total - tolerance:
                     item.is_paid = True
@@ -185,6 +189,7 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
 
             # Actualizar invoice pending_amount
             from app.database.models.invoice import Invoice
+
             invoices_to_update = {}
             for item in items_to_pay:
                 amount_to_pay = partial_payment_info.get(item.id, float(item.total))
@@ -201,17 +206,17 @@ async def handle_transfer(db_session: AsyncSession, transfer: TransferExtraction
                     invoice.pending_amount = max(0.0, current_pending - paid_amount_float)
 
             await db_session.commit()
-            
+
             fully_paid = sum(1 for item in items_to_pay if item.is_paid)
             partial_paid = len(items_to_pay) - fully_paid
-            
+
             message = f"✅ Pago parcial procesado por ${transfer_amount:.2f}.\n"
             if fully_paid > 0:
                 message += f"  • {fully_paid} item(s) completamente pagado(s)\n"
             if partial_paid > 0:
                 message += f"  • {partial_paid} item(s) con pago parcial\n"
             message += f"\nTotal pendiente restante: ${total_pending - transfer_amount:.2f}"
-            
+
             send_text_message(sender, message)
         else:
             # Pago completo - usar la función existente
@@ -479,44 +484,43 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
         if not await check_user_has_active_session(db_session, sender):
             send_text_message(sender, NO_ACTIVE_SESSION_MESSAGE)
             return
-        
+
         # Get the active session and user
         current_user = await get_user_by_phone_number(db_session, sender)
         from app.database.sql.session import get_active_session_by_user_id
+
         active_session = await get_active_session_by_user_id(db_session, current_user.id)
-        
+
         if not active_session:
             send_text_message(sender, NO_ACTIVE_SESSION_MESSAGE)
             return
-        
+
         # Get assignment data
         assign_data = action_to_execute.assign_item_to_user_data
         if not assign_data:
-            send_text_message(sender, "No se pudo identificar qué item asignar. Por favor, especifica el item y el usuario.")
+            send_text_message(
+                sender, "No se pudo identificar qué item asignar. Por favor, especifica el item y el usuario."
+            )
             return
-        
+
         # Determine the user to assign to
         # If no user_name is provided, assume the sender is consuming the item
         user_name = assign_data.user_name
         user_id = assign_data.user_id
-        
+
         if not user_name and not user_id:
             # Default to sender
             user_id = current_user.id
             user_name = None
-        
+
         # Find items in the active session
         from sqlalchemy import select
         from app.database.models.item import Item
         from app.database.models.invoice import Invoice
-        
+
         # Build query to find items in the active session
-        query = (
-            select(Item)
-            .join(Invoice, Item.invoice_id == Invoice.id)
-            .where(Invoice.session_id == active_session.id)
-        )
-        
+        query = select(Item).join(Invoice, Item.invoice_id == Invoice.id).where(Invoice.session_id == active_session.id)
+
         # Filter by item_id if provided
         if assign_data.item_id:
             query = query.where(Item.id == assign_data.item_id)
@@ -526,20 +530,20 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
         else:
             send_text_message(sender, "Por favor, especifica qué item quieres asignar (por descripción o ID).")
             return
-        
+
         # Prefer unassigned items (debtor_id is None)
         query = query.where(Item.debtor_id.is_(None))
-        
+
         result = await db_session.execute(query)
         items = result.scalars().all()
-        
+
         if not items:
             send_text_message(
                 sender,
-                f"No se encontraron items sin asignar que coincidan con '{assign_data.item_description or f'ID {assign_data.item_id}'}' en tu sesión activa."
+                f"No se encontraron items sin asignar que coincidan con '{assign_data.item_description or f'ID {assign_data.item_id}'}' en tu sesión activa.",
             )
             return
-        
+
         # Si hay múltiples items con la misma descripción, asignar el primero disponible
         # (el sistema ya filtra por items sin asignar, así que cualquiera es válido)
         if len(items) > 1:
@@ -547,14 +551,14 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
                 f"Se encontraron {len(items)} items con la descripción '{assign_data.item_description}'. "
                 f"Asignando el primero disponible (ID: {items[0].id})"
             )
-        
+
         item = items[0]
-        
+
         # Find the user to assign to
         from app.database.sql.user import get_user_by_id
         from sqlalchemy import select
         from app.database.models.user import User
-        
+
         assigned_user = None
         if user_id:
             assigned_user = await get_user_by_id(db_session, user_id)
@@ -563,16 +567,16 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
             users = result.scalars().all()
             if users:
                 assigned_user = users[0] if len(users) == 1 else users[0]  # Use first match
-        
+
         if not assigned_user:
             send_text_message(sender, f"❌ No se pudo encontrar al usuario{' ' + user_name if user_name else ''}.")
             return
-        
+
         # Assign the item by updating debtor_id
         item.debtor_id = assigned_user.id
         await db_session.commit()
         await db_session.refresh(item)
-        
+
         # Send confirmation message
         message = f"✅ Item '{item.description}' asignado a {assigned_user.name} (${item.total:.2f})"
         send_text_message(sender, message)
@@ -586,3 +590,8 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
             )
         else:
             send_text_message(sender, "No entendí tu mensaje. ¿Podrías reformularlo o pedir ayuda con 'ayuda'?")
+    elif action_to_execute.action == ActionType.COLLECT:
+        if not await check_user_has_active_session(db_session, sender):
+            send_text_message(sender, NO_ACTIVE_SESSION_MESSAGE)
+            return
+        await send_collection_message_to_all_debtors(db_session, sender)

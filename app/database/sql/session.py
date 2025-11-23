@@ -56,7 +56,7 @@ async def get_all_session_users(db_session: AsyncSession, session_id: str | uuid
         session_id_str = str(session_id)
         # Convert string to Python UUID for use in queries
         session_uuid = uuid.UUID(session_id_str)
-    
+
     session = await get_session_by_id(db_session, session_id_str)
 
     # Get owner
@@ -76,6 +76,22 @@ async def get_all_session_users(db_session: AsyncSession, session_id: str | uuid
     participants = result.all()
     users_list.extend(participants)
     return users_list
+
+
+async def get_all_session_debtors_from_active_session(db_session: AsyncSession, number: str) -> list[User]:
+    user = await get_user_by_phone_number(db_session, number)
+    if not user:
+        raise NoResultFound(f"User with phone {number} not found")
+    session = await get_active_session_by_user_id(db_session, user.id)
+    if not session:
+        raise NoResultFound("No active session found")
+    result = await db_session.execute(
+        select(User)
+        .select_from(session_users)
+        .join(User, session_users.c.user_id == User.id)
+        .where(session_users.c.session_id == session.id, session_users.c.user_id != session.owner_id)
+    )
+    return result.scalars().all()
 
 
 async def close_session(db_session: AsyncSession, session_id: str, user_phone: str) -> Session:
