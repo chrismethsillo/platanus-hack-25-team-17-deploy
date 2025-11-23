@@ -120,8 +120,26 @@ ACCIONES DISPONIBLES:
          * "Recaudar fondos para la sesión de la cena de aniversario"
          * "Cobrar fondos para la sesión de la cena de aniversario"
          * "Recauda dinero para la sesión activa"
+6. QUERY_DEBT_STATUS (consultar_estado_deudas):
+   - Descripción: Consultar el estado de las deudas del usuario
+   - Cuándo usar: Cuando el usuario pregunta sobre sus deudas, cuánto debe, a quién le debe, qué items tiene asignados, o qué items no están asignados
+   - Palabras clave: "cuánto debo", "cuanto debo", "a quién debo", "a quien debo", "a quien le debo", "mis deudas", "estado", "estado de deudas", "qué debo", "que debo", "items sin asignar", "items no asignados", "mi cuenta", "mi balance"
+   - NO requiere datos adicionales - el sistema automáticamente obtiene la información del usuario
+   - Ejemplos:
+     * "¿Cuánto debo?"
+       → action: "query_debt_status"
+     * "A quién le debo?"
+       → action: "query_debt_status"
+     * "Mis deudas"
+       → action: "query_debt_status"
+     * "¿Qué items no están tageados?"
+       → action: "query_debt_status"
+     * "Estado de mis deudas"
+       → action: "query_debt_status"
+     * "Cuánto le debo a cada persona"
+       → action: "query_debt_status"
 
-6. UNKNOWN (desconocida):
+7. UNKNOWN (desconocida):
    - Descripción: Usar cuando el texto no corresponde a ninguna de las acciones disponibles o la intención no es clara
    - Cuándo usar: Cuando el texto no menciona ninguna de las acciones disponibles, es ambiguo, o no tiene relación con el sistema de gestión de sesiones y facturas
    - Ejemplos de textos que deberían ser UNKNOWN:

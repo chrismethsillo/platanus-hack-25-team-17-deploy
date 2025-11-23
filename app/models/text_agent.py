@@ -10,6 +10,7 @@ class ActionType(StrEnum):
     JOIN_SESSION = "join_session"
     ASSIGN_ITEM_TO_USER = "assign_item_to_user"
     COLLECT = "trigger_collect"
+    QUERY_DEBT_STATUS = "query_debt_status"
     UNKNOWN = "unknown"
 
 

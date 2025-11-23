@@ -385,6 +385,15 @@ async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody,
 
     action_to_execute = await process_user_command(text_content)
 
+    if action_to_execute.action == ActionType.QUERY_DEBT_STATUS:
+        # Handle debt status query
+        from app.database.sql.debt_queries import get_my_debt_summary, format_debt_summary
+        
+        summary = await get_my_debt_summary(db_session, sender)
+        formatted_message = format_debt_summary(summary)
+        send_text_message(sender, formatted_message)
+        return
+
     if action_to_execute.action == ActionType.CREATE_SESSION:
         if await check_user_has_active_session(db_session, sender):
             send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
