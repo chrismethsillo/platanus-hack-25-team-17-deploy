@@ -65,7 +65,7 @@ async def handle_receipt(db_session: AsyncSession, receipt: ReceiptExtraction, s
     tip = receipt.tip / receipt.total_amount
     try:
         invoice, items = await create_invoice_with_items(db_session, receipt, tip, sender)
-        send_message_to_all_session_users(db_session, invoice.session_id, build_invoice_created_message(invoice, items))
+        await send_message_to_all_session_users(db_session, invoice.session_id, build_invoice_created_message(invoice, items))
     except MultipleResultsFound:
         send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
         return

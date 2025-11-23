@@ -35,19 +35,27 @@ async def has_active_session(db_session: AsyncSession, user_id: int) -> bool:
         return False
 
 
-async def get_all_session_users(db_session: AsyncSession, session_id: str) -> list[tuple[int, str]]:
+async def get_all_session_users(db_session: AsyncSession, session_id: str | uuid.UUID) -> list[tuple[int, str]]:
     """Get all users (owner + participants) in a session.
 
     Args:
         db_session: Database session
-        session_id: Session UUID as string
+        session_id: Session UUID as string or UUID object
 
     Returns:
         List of tuples (user_id, phone_number) for all users in the session
     """
-
-    session_uuid = uuid.UUID(session_id)
-    session = await get_session_by_id(db_session, session_id)
+    # Convert session_id to string if it's a UUID object (handles both Python UUID and asyncpg UUID)
+    if isinstance(session_id, str):
+        session_id_str = session_id
+        session_uuid = uuid.UUID(session_id)
+    else:
+        # It's a UUID object (Python UUID or asyncpg UUID) - convert to string first
+        session_id_str = str(session_id)
+        # Convert string to Python UUID for use in queries
+        session_uuid = uuid.UUID(session_id_str)
+    
+    session = await get_session_by_id(db_session, session_id_str)
 
     # Get owner
     owner = await get_user_by_id(db_session, session.owner_id)
