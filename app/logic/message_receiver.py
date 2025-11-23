@@ -25,6 +25,7 @@ from app.database.sql.session import (
     get_all_session_users,
 )
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.sql.user import get_user_by_phone_number, create_user
 
 
