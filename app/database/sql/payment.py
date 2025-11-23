@@ -23,7 +23,7 @@ async def get_pending_items_by_user_id(db_session: AsyncSession, user_id: int) -
 
     result = await db_session.execute(
         select(Item)
-        .options(selectinload(Item.invoice).selectinload(Invoice.payer).selectinload(User.name))
+        .options(selectinload(Item.invoice).selectinload(Invoice.payer))
         .join(Invoice, Item.invoice_id == Invoice.id)
         .join(SessionModel, Invoice.session_id == SessionModel.id)
         .outerjoin(session_users, SessionModel.id == session_users.c.session_id)
