@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, Request, Response
 from app.models.kapso import KapsoWebhookMessageReceived
-from app.logic.message_receiver import handle_image_message, handle_text_message, check_existing_user_logic
+from app.logic.message_receiver import handle_image_message, handle_text_message, handle_voice_message, check_existing_user_logic
 from app.database import db_manager
 
 router = APIRouter(prefix="/webhooks/kapso")
@@ -17,4 +17,6 @@ async def kapso_received_webhook(request: Request, payload: KapsoWebhookMessageR
             await handle_image_message(db_session, payload.message.image, payload.message.sender)
         elif payload.message.is_text():
             await handle_text_message(db_session, payload.message.text, payload.message.sender)
+        elif payload.message.is_audio():
+            await handle_voice_message(db_session, payload.conversation, payload.message.sender)
     return Response(status_code=200)

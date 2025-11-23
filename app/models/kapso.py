@@ -86,9 +86,22 @@ class KapsoImage(BaseModel):
     link: str
 
 
+class KapsoAudio(BaseModel):
+    id: str
+    link: str
+    voice: bool = False
+    sha256: str | None = None
+    mime_type: str | None = None
+
+
+class KapsoConversationMetadata(BaseModel):
+    last_message_text: str | None = None
+
+
 class KapsoConversation(BaseModel):
     contact_name: str
     phone_number: str
+    kapso: KapsoConversationMetadata | None = None
 
 
 class KapsoMessage(BaseModel):
@@ -97,12 +110,16 @@ class KapsoMessage(BaseModel):
     received_at: datetime = datetime.now(tz=timezone.utc).replace(tzinfo=None)
     text: KapsoBody | None = None
     image: KapsoImage | None = None
+    audio: KapsoAudio | None = None
 
     def is_image(self) -> bool:
         return self.image is not None
 
     def is_text(self) -> bool:
         return self.text is not None
+
+    def is_audio(self) -> bool:
+        return self.audio is not None
 
 
 class KapsoWebhookMessageReceived(BaseModel):

@@ -24,7 +24,6 @@ from app.database.sql.session import (
     join_session,
     get_all_session_users,
 )
-from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.sql.user import get_user_by_phone_number, create_user
 
@@ -35,18 +34,18 @@ async def check_existing_user_logic(db_session: AsyncSession, conversation: Kaps
     logging.info(f"Current user: {current_user}")
     if not current_user:
         try:
-            create_user(db_session, conversation.phone_number, conversation.contact_name)
+            await create_user(db_session, conversation.phone_number, conversation.contact_name)
             logging.info(f"Created new user for {conversation.phone_number}")
         except Exception as e:
             logging.error(f"Error creating user: {e}", exc_info=True)
             # Continue anyway, user might have been created by another request
 
 
-def check_user_has_active_session(db_session: Session, sender: str) -> bool:
-    user = get_user_by_phone_number(db_session, sender)
+async def check_user_has_active_session(db_session: AsyncSession, sender: str) -> bool:
+    user = await get_user_by_phone_number(db_session, sender)
     if not user:
         return False
-    return has_active_session(db_session, user.id)
+    return await has_active_session(db_session, user.id)
 
 
 async def handle_receipt(db_session: AsyncSession, receipt: ReceiptExtraction, sender: str) -> None:
@@ -58,7 +57,7 @@ async def handle_receipt(db_session: AsyncSession, receipt: ReceiptExtraction, s
         sender: User phone number
     """
     # Check if user has an active session
-    if not check_user_has_active_session(db_session, sender):
+    if not await check_user_has_active_session(db_session, sender):
         send_text_message(sender, NO_ACTIVE_SESSION_MESSAGE)
         return
 
@@ -66,8 +65,6 @@ async def handle_receipt(db_session: AsyncSession, receipt: ReceiptExtraction, s
     try:
         invoice, items = await create_invoice_with_items(db_session, receipt, tip, sender)
         send_text_message(sender, build_invoice_created_message(invoice, items))
-        send_text_message(sender, "Para compartir la sesión de cobro con más personas, comparte el siguiente mensaje:")
-        send_text_message(sender, build_session_id_link(invoice.session_id))
     except MultipleResultsFound:
         send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
         return
@@ -132,24 +129,59 @@ async def handle_image_message(db_session: AsyncSession, image: KapsoImage, send
         await handle_transfer(db_session, ocr_result.transfer, sender)
 
 
-async def handle_text_message(db_session: Session, message_body: KapsoBody, sender: str) -> None:
+
+async def handle_voice_message(db_session: AsyncSession, conversation: KapsoConversation, sender: str) -> None:
+    """
+    Extrae la transcripción del mensaje de voz y la procesa con el agente.
+    La transcripción se encuentra en conversation.kapso.last_message_text con formato "Transcript: ..."
+    """
+    if not conversation.kapso or not conversation.kapso.last_message_text:
+        logging.warning(f"No se encontró transcripción para mensaje de voz de {sender}")
+        return
+    
+    last_message_text = conversation.kapso.last_message_text
+    
+    # Buscar el prefijo "Transcript: " y extraer solo la transcripción
+    transcript_prefix = "Transcript: "
+    if transcript_prefix not in last_message_text:
+        logging.warning(f"No se encontró el prefijo 'Transcript: ' en last_message_text: {last_message_text}")
+        return
+    
+    # Encontrar la posición después de "Transcript: "
+    transcript_start = last_message_text.find(transcript_prefix) + len(transcript_prefix)
+    transcript = last_message_text[transcript_start:].strip()
+    
+    if not transcript:
+        logging.warning(f"La transcripción está vacía para mensaje de voz de {sender}")
+        return
+    
+    logging.info(f"Procesando transcripción de voz: {transcript[:100]}...")
+    
+    # Procesar la transcripción con el agente, igual que handle_text_message
+    action_to_execute = await process_user_command(transcript)
+    if action_to_execute.action == ActionType.CREATE_SESSION:
+        session = await create_session(db_session, action_to_execute.create_session_data.description, sender)
+        send_text_message(sender, build_session_id_link(session.id))
+
+
+async def handle_text_message(db_session: AsyncSession, message_body: KapsoBody, sender: str) -> None:
     text_content = message_body.body if hasattr(message_body, "body") else str(message_body)
 
     action_to_execute = await process_user_command(text_content)
 
     if action_to_execute.action == ActionType.CREATE_SESSION:
-        if check_user_has_active_session(db_session, sender):
+        if await check_user_has_active_session(db_session, sender):
             send_text_message(sender, TOO_MANY_ACTIVE_SESSIONS_MESSAGE)
             return
 
         # Create new session
-        session = create_session(db_session, action_to_execute.create_session_data.description, sender)
+        session = await create_session(db_session, action_to_execute.create_session_data.description, sender)
         send_text_message(sender, SESSION_CREATED_MESSAGE)
         send_text_message(sender, build_session_id_link(session.id))
 
     elif action_to_execute.action == ActionType.CLOSE_SESSION:
         # Check if user has an active session
-        if not check_user_has_active_session(db_session, sender):
+        if not await check_user_has_active_session(db_session, sender):
             send_text_message(sender, "No tienes una sesión activa para cerrar.")
             return
 
@@ -158,12 +190,16 @@ async def handle_text_message(db_session: Session, message_body: KapsoBody, send
             session_id = action_to_execute.close_session_data.session_id
         else:
             # Get user's active session
-            user = get_user_by_phone_number(db_session, sender)
+            user = await get_user_by_phone_number(db_session, sender)
             from app.database.sql.session import get_active_session_by_user_id
 
             try:
-                active_session = get_active_session_by_user_id(db_session, user.id)
-                session_id = str(active_session.id)
+                active_session = await get_active_session_by_user_id(db_session, user.id)
+                if active_session:
+                    session_id = str(active_session.id)
+                else:
+                    send_text_message(sender, "No se pudo encontrar tu sesión activa.")
+                    return
             except (NoResultFound, MultipleResultsFound):
                 send_text_message(sender, "No se pudo encontrar tu sesión activa.")
                 return
@@ -171,13 +207,13 @@ async def handle_text_message(db_session: Session, message_body: KapsoBody, send
         # Close the session
         try:
             # Get all users before closing to notify them
-            all_users = get_all_session_users(db_session, session_id)
+            all_users = await get_all_session_users(db_session, session_id)
 
             # Close the session (this will verify ownership)
-            closed_session = close_session(db_session, session_id, sender)
+            closed_session = await close_session(db_session, session_id, sender)
 
             # Get owner info
-            owner_user = get_user_by_phone_number(db_session, sender)
+            owner_user = await get_user_by_phone_number(db_session, sender)
 
             # Send notification to all users
             for user_id, phone_number in all_users:
@@ -203,7 +239,7 @@ async def handle_text_message(db_session: Session, message_body: KapsoBody, send
 
         try:
             # Join the session (this will close any active session first)
-            session, already_in_session = join_session(db_session, session_id, sender)
+            session, already_in_session = await join_session(db_session, session_id, sender)
 
             if already_in_session:
                 send_text_message(
@@ -229,7 +265,7 @@ async def handle_text_message(db_session: Session, message_body: KapsoBody, send
 
     elif action_to_execute.action == ActionType.ASSIGN_ITEM_TO_USER:
         # For assign item actions, check if user has active session
-        if not check_user_has_active_session(db_session, sender):
+        if not await check_user_has_active_session(db_session, sender):
             send_text_message(sender, NO_ACTIVE_SESSION_MESSAGE)
             return
         # TODO: Implement assign item to user logic
@@ -237,7 +273,7 @@ async def handle_text_message(db_session: Session, message_body: KapsoBody, send
 
     elif action_to_execute.action == ActionType.UNKNOWN:
         # Check if user might need to create a session first
-        if not check_user_has_active_session(db_session, sender):
+        if not await check_user_has_active_session(db_session, sender):
             send_text_message(
                 sender,
                 "No entendí tu mensaje. " + NO_ACTIVE_SESSION_MESSAGE,

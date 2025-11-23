@@ -26,4 +26,4 @@ async def create_user(db_session: AsyncSession, phone_number: str, name: str) ->
 
 async def get_user_by_id(db_session: AsyncSession, user_id: int) -> User | None:
     result = await db_session.execute(select(User).filter(User.id == user_id))
-    return result
+    return result.scalar_one_or_none()
