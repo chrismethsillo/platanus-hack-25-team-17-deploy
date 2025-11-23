@@ -2,6 +2,7 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database.crud.base import CRUDBase
 from app.database.models.item import Item
@@ -18,9 +19,13 @@ class CRUDItem(CRUDBase[Item]):
             invoice_id: Invoice ID
 
         Returns:
-            List of Item instances
+            List of Item instances with debtor relationship loaded
         """
-        result = await db.execute(select(Item).where(Item.invoice_id == invoice_id))
+        result = await db.execute(
+            select(Item)
+            .options(selectinload(Item.debtor))
+            .where(Item.invoice_id == invoice_id)
+        )
         return list(result.scalars().all())
 
     async def get_by_debtor(self, db: AsyncSession, debtor_id: int) -> list[Item]:

@@ -2,11 +2,45 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from decimal import Decimal
 
 from app.database.crud import item_crud
 from app.routers.deps import get_db
 
 router = APIRouter()
+
+
+def serialize_item(item) -> dict:
+    """Serialize an Item model to a dictionary.
+    
+    Args:
+        item: Item SQLAlchemy model instance
+        
+    Returns:
+        Dictionary representation of the item
+    """
+    result = {
+        "id": item.id,
+        "invoice_id": item.invoice_id,
+        "debtor_id": item.debtor_id,
+        "unit_price": float(item.unit_price) if isinstance(item.unit_price, Decimal) else item.unit_price,
+        "paid_amount": float(item.paid_amount) if isinstance(item.paid_amount, Decimal) else item.paid_amount,
+        "tip": float(item.tip) if isinstance(item.tip, Decimal) else item.tip,
+        "total": float(item.total) if isinstance(item.total, Decimal) else item.total,
+        "is_paid": item.is_paid,
+        "payment_id": item.payment_id,
+        "description": getattr(item, "description", None),
+    }
+    
+    # Include debtor if loaded, but only basic fields to avoid circular references
+    if hasattr(item, "debtor") and item.debtor:
+        result["debtor"] = {
+            "id": item.debtor.id,
+            "name": item.debtor.name,
+            "phone_number": item.debtor.phone_number,
+        }
+    
+    return result
 
 
 @router.get("/")
@@ -67,7 +101,7 @@ async def get_items_by_invoice(
         List of items for the invoice
     """
     items = await item_crud.get_by_invoice(db, invoice_id)
-    return items
+    return [serialize_item(item) for item in items]
 
 
 @router.get("/debtor/{debtor_id}")
