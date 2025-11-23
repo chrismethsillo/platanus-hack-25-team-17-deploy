@@ -41,6 +41,7 @@ export interface SessionData {
   tituloCompra: string
   fecha: string
   montoTotal: number
+  saldoFaltante: number
 }
 
 export interface Participante {
@@ -105,6 +106,9 @@ export function transformSessionData(
   // Calculate total amount from all invoices
   const montoTotal = invoices.reduce((sum, invoice) => sum + Number(invoice.total), 0)
 
+  // Calculate pending amount (saldo faltante) from all invoices
+  const saldoFaltante = invoices.reduce((sum, invoice) => sum + Number(invoice.pending_amount), 0)
+
   // Get current date formatted
   const fecha = new Date().toLocaleDateString("es-CL", {
     year: "numeric",
@@ -117,6 +121,7 @@ export function transformSessionData(
     tituloCompra: session.description || "Sesión sin descripción",
     fecha,
     montoTotal,
+    saldoFaltante,
   }
 
   // Collect all unique users from items
@@ -137,7 +142,9 @@ export function transformSessionData(
 
   // Transform to participants
   const participants: Participante[] = Array.from(userItemsMap.entries()).map(([userId, items]) => {
-    const montoReembolsado = items.reduce((sum, item) => sum + Number(item.total), 0)
+    // Only sum items that are paid
+    const montoReembolsado = items
+      .reduce((sum, item) => sum + Number(item.total), 0)
     const allPaid = items.every((item) => item.is_paid)
     const somePaid = items.some((item) => item.is_paid)
 

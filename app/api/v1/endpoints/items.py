@@ -1,5 +1,6 @@
 """Item endpoints."""
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from decimal import Decimal
@@ -154,4 +155,27 @@ async def get_items_by_payment(
     """
     items = await item_crud.get_by_payment(db, payment_id)
     return items
+
+
+@router.get("/session/{session_id}")
+async def get_items_by_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get items by session ID.
+
+    Args:
+        session_id: Session UUID
+        db: Database session
+
+    Returns:
+        List of items for the session
+    """
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session ID format")
+    
+    items = await item_crud.get_by_session(db, session_uuid)
+    return [serialize_item(item) for item in items]
 

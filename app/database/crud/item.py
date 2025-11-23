@@ -3,9 +3,11 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+import uuid
 
 from app.database.crud.base import CRUDBase
 from app.database.models.item import Item
+from app.database.models.invoice import Invoice
 
 
 class CRUDItem(CRUDBase[Item]):
@@ -64,6 +66,24 @@ class CRUDItem(CRUDBase[Item]):
             List of Item instances
         """
         result = await db.execute(select(Item).where(Item.payment_id == payment_id))
+        return list(result.scalars().all())
+
+    async def get_by_session(self, db: AsyncSession, session_id: uuid.UUID) -> list[Item]:
+        """Get items by session ID.
+
+        Args:
+            db: Database session
+            session_id: Session UUID
+
+        Returns:
+            List of Item instances with debtor relationship loaded
+        """
+        result = await db.execute(
+            select(Item)
+            .join(Invoice, Item.invoice_id == Invoice.id)
+            .options(selectinload(Item.debtor))
+            .where(Invoice.session_id == session_id)
+        )
         return list(result.scalars().all())
 
 

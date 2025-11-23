@@ -33,13 +33,14 @@ export default async function SessionPage({ params }: PageProps) {
       tituloCompra: "Sesión no encontrada",
       fecha: new Date().toLocaleDateString("es-CL"),
       montoTotal: 0,
+      saldoFaltante: 0,
     }
   }
 
   // Calculate statistics
   const totalParticipantes = participants.length
   const montoTotalReembolsado = participants.reduce((sum, p) => sum + p.montoReembolsadoEnEstaCompra, 0)
-  const saldoFaltante = sessionData.montoTotal - montoTotalReembolsado
+  const saldoFaltante = sessionData.saldoFaltante
 
   // Formatear moneda CLP
   const formatCLP = (amount: number) => {
